@@ -84,7 +84,7 @@ export function FileUpload() {
         <Alert>
           <AlertCircle className="h-4 w-4" />
           <AlertDescription className="text-xs">
-            Supported formats: TXT files only • Maximum size: {formatFileSize(MAX_FILE_SIZE)} • Files are processed and split into chunks for semantic search
+            Supported formats: TXT, MD • Maximum size: {formatFileSize(MAX_FILE_SIZE)} • Files are processed and split into chunks for semantic search
           </AlertDescription>
         </Alert>
 
@@ -105,7 +105,7 @@ export function FileUpload() {
                   <p className="mb-2 text-sm text-muted-foreground">
                     <span className="font-semibold">Click to upload</span> or drag and drop
                   </p>
-                  <p className="text-xs text-muted-foreground">TXT files</p>
+                  <p className="text-xs text-muted-foreground">TXT or MD files only</p>
                 </>
               )}
             </div>
@@ -113,7 +113,7 @@ export function FileUpload() {
               id="file-upload"
               type="file"
               className="hidden"
-              accept=".txt"
+              accept=".txt,.md"
               onChange={handleFileChange}
               disabled={uploading}
             />

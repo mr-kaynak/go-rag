@@ -2,6 +2,11 @@ package handler
 
 import (
 	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"path/filepath"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/mrkaynak/rag/internal/config"
@@ -16,6 +21,21 @@ import (
 const (
 	// MaxFileSize is the maximum allowed file size for uploads (50MB)
 	MaxFileSize = 50 * 1024 * 1024
+)
+
+var (
+	// AllowedMimeTypes lists the permitted file types for upload
+	AllowedMimeTypes = map[string]bool{
+		"text/plain":      true,
+		"text/markdown":   true,
+		"text/x-markdown": true,
+	}
+
+	// AllowedExtensions lists the permitted file extensions
+	AllowedExtensions = map[string]bool{
+		".txt": true,
+		".md":  true,
+	}
 )
 
 // UploadHandler handles document upload requests
@@ -45,6 +65,39 @@ func NewUploadHandler(
 		vectorStore:   vectorStore,
 		metadataStore: metadataStore,
 	}
+}
+
+// detectAndValidateFileType detects the file type and validates it against allowed types
+func detectAndValidateFileType(file *multipart.FileHeader) (string, error) {
+	// First check file extension
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	if !AllowedExtensions[ext] {
+		return "", fmt.Errorf("file extension '%s' is not allowed. Supported formats: .txt, .md", ext)
+	}
+
+	// Open file to detect content type
+	f, err := file.Open()
+	if err != nil {
+		return "", fmt.Errorf("failed to open file for type detection: %w", err)
+	}
+	defer f.Close()
+
+	// Read first 512 bytes for content type detection
+	buffer := make([]byte, 512)
+	n, err := f.Read(buffer)
+	if err != nil && err != io.EOF {
+		return "", fmt.Errorf("failed to read file for type detection: %w", err)
+	}
+
+	// Detect content type
+	contentType := http.DetectContentType(buffer[:n])
+
+	// Validate content type
+	if !AllowedMimeTypes[contentType] {
+		return "", fmt.Errorf("file type '%s' is not allowed. Supported formats: text/plain, text/markdown", contentType)
+	}
+
+	return contentType, nil
 }
 
 // Upload handles document upload and processing
@@ -90,9 +143,20 @@ func (h *UploadHandler) Upload(c *fiber.Ctx) error {
 		return h.sendError(c, errors.BadRequest("uploaded file is empty. Please select a valid file."))
 	}
 
+	// Detect and validate file type
+	fileType, err := detectAndValidateFileType(file)
+	if err != nil {
+		h.logger.Warn("invalid file type",
+			zap.String("filename", file.Filename),
+			zap.Error(err),
+		)
+		return h.sendError(c, errors.BadRequest(err.Error()))
+	}
+
 	h.logger.Info("processing file upload",
 		zap.String("filename", file.Filename),
 		zap.Int64("size", file.Size),
+		zap.String("type", fileType),
 	)
 
 	// Open uploaded file
@@ -138,7 +202,7 @@ func (h *UploadHandler) Upload(c *fiber.Ctx) error {
 		ID:         doc.ID,
 		FileName:   doc.FileName,
 		FileSize:   file.Size,
-		FileType:   "text/plain", // TODO: detect file type
+		FileType:   fileType,
 		ChunkCount: len(chunks),
 		UploadedAt: doc.CreatedAt,
 	}
