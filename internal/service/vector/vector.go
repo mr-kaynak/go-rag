@@ -49,17 +49,24 @@ func New(cfg *config.Config) (*Store, error) {
 
 // Add adds chunks to the vector store
 func (s *Store) Add(chunks []models.Chunk) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	// Validate first (no lock needed)
 	for _, chunk := range chunks {
 		if len(chunk.Embedding) == 0 {
 			return errors.BadRequest(fmt.Sprintf("chunk %s has no embedding", chunk.ID))
 		}
-		s.chunks[chunk.ID] = chunk
 	}
 
-	return s.persist()
+	// Short lock for memory update
+	s.mu.Lock()
+	for _, chunk := range chunks {
+		s.chunks[chunk.ID] = chunk
+	}
+	// Create snapshot for persistence
+	snapshot := s.cloneChunks()
+	s.mu.Unlock()
+
+	// Persist outside lock to avoid blocking other operations
+	return s.persistSnapshot(snapshot)
 }
 
 // Search finds similar chunks using cosine similarity
@@ -114,32 +121,42 @@ func (s *Store) GetAll() []models.Chunk {
 // Clear removes all chunks
 func (s *Store) Clear() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	s.chunks = make(map[string]models.Chunk)
-	return s.persist()
+	snapshot := s.cloneChunks()
+	s.mu.Unlock()
+
+	return s.persistSnapshot(snapshot)
 }
 
 // DeleteByDocID removes all chunks belonging to a document
 func (s *Store) DeleteByDocID(docID string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	// Find and remove chunks with matching DocID
 	for id, chunk := range s.chunks {
 		if chunk.DocID == docID {
 			delete(s.chunks, id)
 		}
 	}
+	snapshot := s.cloneChunks()
+	s.mu.Unlock()
 
-	return s.persist()
+	return s.persistSnapshot(snapshot)
 }
 
-// persist saves the vector store to disk
-func (s *Store) persist() error {
+// cloneChunks creates a deep copy of chunks map (must be called with lock held)
+func (s *Store) cloneChunks() map[string]models.Chunk {
+	snapshot := make(map[string]models.Chunk, len(s.chunks))
+	for id, chunk := range s.chunks {
+		snapshot[id] = chunk
+	}
+	return snapshot
+}
+
+// persistSnapshot saves a snapshot of chunks to disk (no lock needed)
+func (s *Store) persistSnapshot(snapshot map[string]models.Chunk) error {
 	filePath := filepath.Join(s.cfg.Storage.VectorStorePath, "vectors.json")
 
-	data, err := json.MarshalIndent(s.chunks, "", "  ")
+	data, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal chunks: %w", err)
 	}
@@ -149,6 +166,15 @@ func (s *Store) persist() error {
 	}
 
 	return nil
+}
+
+// persist saves the current vector store to disk (legacy method, kept for load compatibility)
+func (s *Store) persist() error {
+	s.mu.RLock()
+	snapshot := s.cloneChunks()
+	s.mu.RUnlock()
+
+	return s.persistSnapshot(snapshot)
 }
 
 // load loads the vector store from disk
