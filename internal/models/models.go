@@ -30,8 +30,16 @@ type ChatRequest struct {
 
 // ChatResponse represents a chat response
 type ChatResponse struct {
-	Message string   `json:"message"`
-	Context []string `json:"context,omitempty"`
+	Message      string       `json:"message"`
+	Context      []string     `json:"context,omitempty"`
+	TokenMetrics TokenMetrics `json:"token_metrics,omitempty"`
+}
+
+// TokenMetrics represents token usage information
+type TokenMetrics struct {
+	InputTokens  int `json:"input_tokens"`
+	OutputTokens int `json:"output_tokens"`
+	TotalTokens  int `json:"total_tokens"`
 }
 
 // UploadResponse represents a document upload response

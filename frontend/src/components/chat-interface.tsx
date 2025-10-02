@@ -58,10 +58,10 @@ export function ChatInterface({ provider, model, systemPrompt, onTokenUsage }: C
         system_prompt: systemPrompt,
       })
 
-      // Estimate token usage (rough approximation)
-      const inputTokens = Math.ceil((input.length + (systemPrompt?.length || 0)) / 4)
-      const outputTokens = Math.ceil(response.message.length / 4)
-      onTokenUsage?.(inputTokens, outputTokens)
+      // Use actual token metrics from backend if available
+      if (response.token_metrics) {
+        onTokenUsage?.(response.token_metrics.input_tokens, response.token_metrics.output_tokens)
+      }
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),

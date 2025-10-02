@@ -14,6 +14,7 @@ import (
 	"github.com/mrkaynak/rag/internal/service/settings"
 	"github.com/mrkaynak/rag/internal/service/vector"
 	"github.com/mrkaynak/rag/pkg/errors"
+	"github.com/mrkaynak/rag/pkg/tokenizer"
 	"go.uber.org/zap"
 )
 
@@ -143,14 +144,27 @@ func (h *ChatHandler) Chat(c *fiber.Ctx) error {
 		return h.sendError(c, err)
 	}
 
+	// Calculate token metrics
+	inputTokens := tokenizer.CountTokensForMessages(systemPrompt, req.Message, context)
+	outputTokens := tokenizer.EstimateTokens(response)
+	totalTokens := inputTokens + outputTokens
+
 	h.logger.Info("chat request completed",
 		zap.String("provider", req.Provider),
 		zap.Int("context_chunks", len(results)),
+		zap.Int("input_tokens", inputTokens),
+		zap.Int("output_tokens", outputTokens),
+		zap.Int("total_tokens", totalTokens),
 	)
 
 	return c.Status(fiber.StatusOK).JSON(models.ChatResponse{
 		Message: response,
 		Context: contextTexts,
+		TokenMetrics: models.TokenMetrics{
+			InputTokens:  inputTokens,
+			OutputTokens: outputTokens,
+			TotalTokens:  totalTokens,
+		},
 	})
 }
 

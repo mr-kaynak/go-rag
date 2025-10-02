@@ -13,9 +13,16 @@ export interface ChatRequest {
   system_prompt?: string
 }
 
+export interface TokenMetrics {
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+}
+
 export interface ChatResponse {
   message: string
   context?: string[]
+  token_metrics?: TokenMetrics
 }
 
 export interface HealthResponse {
