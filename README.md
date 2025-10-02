@@ -81,17 +81,27 @@ cd frontend
 npm install
 ```
 
-3. Start development server:
+3. Configure frontend environment:
+```bash
+cp .env.example .env
+# Edit .env and set VITE_API_BASE_URL if needed
+```
+
+4. Start development server:
 ```bash
 npm run dev
 ```
 
 The frontend will start on `http://localhost:5173`
 
-4. Build for production:
+5. Build for production:
 ```bash
+# Set API URL for production
+export VITE_API_BASE_URL=https://api.yourdomain.com/api/v1
 npm run build
 ```
+
+**Note:** The API URL can be configured via `VITE_API_BASE_URL` environment variable. Default is `http://localhost:3000/api/v1`
 
 ### Quick Start with Ollama (No API Keys Required)
 
