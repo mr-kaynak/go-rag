@@ -1,8 +1,9 @@
 import { useState } from "react"
-import { Upload, FileText, Loader2, CheckCircle2, X } from "lucide-react"
+import { Upload, FileText, Loader2, CheckCircle2, X, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { api, type UploadResponse } from "@/lib/api"
 
 interface UploadedFile {
@@ -11,14 +12,37 @@ interface UploadedFile {
   chunkCount: number
 }
 
+const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
+
 export function FileUpload() {
   const [uploading, setUploading] = useState(false)
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [error, setError] = useState<string | null>(null)
 
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 Bytes'
+    const k = 1024
+    const sizes = ['Bytes', 'KB', 'MB', 'GB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
+  }
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+
+    // Client-side validation
+    if (file.size > MAX_FILE_SIZE) {
+      setError(`File too large. Maximum file size is ${formatFileSize(MAX_FILE_SIZE)}`)
+      e.target.value = ''
+      return
+    }
+
+    if (file.size === 0) {
+      setError('File is empty. Please select a valid file.')
+      e.target.value = ''
+      return
+    }
 
     setUploading(true)
     setError(null)
@@ -53,10 +77,17 @@ export function FileUpload() {
           Document Upload
         </CardTitle>
         <CardDescription>
-          Upload documents to build your knowledge base for RAG queries
+          Upload documents to build your knowledge base for RAG queries (max {formatFileSize(MAX_FILE_SIZE)})
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription className="text-xs">
+            Supported formats: TXT files only • Maximum size: {formatFileSize(MAX_FILE_SIZE)} • Files are processed and split into chunks for semantic search
+          </AlertDescription>
+        </Alert>
+
         <div className="flex items-center justify-center w-full">
           <label
             htmlFor="file-upload"

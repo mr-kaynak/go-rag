@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"fmt"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/mrkaynak/rag/internal/config"
 	"github.com/mrkaynak/rag/internal/models"
@@ -9,6 +11,11 @@ import (
 	"github.com/mrkaynak/rag/internal/service/vector"
 	"github.com/mrkaynak/rag/pkg/errors"
 	"go.uber.org/zap"
+)
+
+const (
+	// MaxFileSize is the maximum allowed file size for uploads (50MB)
+	MaxFileSize = 50 * 1024 * 1024
 )
 
 // UploadHandler handles document upload requests
@@ -62,7 +69,25 @@ func (h *UploadHandler) Upload(c *fiber.Ctx) error {
 	file, err := c.FormFile("file")
 	if err != nil {
 		h.logger.Warn("failed to parse file", zap.Error(err))
-		return h.sendError(c, errors.BadRequest("file is required"))
+		return h.sendError(c, errors.BadRequest("file is required. Please select a file to upload."))
+	}
+
+	// Validate file size
+	if file.Size > MaxFileSize {
+		h.logger.Warn("file too large",
+			zap.String("filename", file.Filename),
+			zap.Int64("size", file.Size),
+			zap.Int64("max_size", MaxFileSize),
+		)
+		return h.sendError(c, errors.BadRequest(
+			fmt.Sprintf("file too large. Maximum file size is %d MB", MaxFileSize/(1024*1024)),
+		))
+	}
+
+	// Validate file is not empty
+	if file.Size == 0 {
+		h.logger.Warn("empty file uploaded", zap.String("filename", file.Filename))
+		return h.sendError(c, errors.BadRequest("uploaded file is empty. Please select a valid file."))
 	}
 
 	h.logger.Info("processing file upload",
