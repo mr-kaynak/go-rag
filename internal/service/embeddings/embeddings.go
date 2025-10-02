@@ -6,10 +6,18 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/mrkaynak/rag/internal/config"
 	"github.com/mrkaynak/rag/internal/models"
 	"github.com/mrkaynak/rag/pkg/errors"
+)
+
+const (
+	// MaxRetries is the maximum number of retry attempts for failed embeddings
+	MaxRetries = 3
+	// InitialBackoff is the initial backoff duration between retries
+	InitialBackoff = 1 * time.Second
 )
 
 // Service handles embedding generation
@@ -42,32 +50,59 @@ type openRouterResponse struct {
 	} `json:"error,omitempty"`
 }
 
-// GenerateEmbeddings generates embeddings for chunks
+// GenerateEmbeddings generates embeddings for chunks with retry logic
 func (s *Service) GenerateEmbeddings(chunks []models.Chunk, apiKey string) ([]models.Chunk, error) {
 	// API key not required for Ollama
 	if s.cfg.Embeddings.Provider != "ollama" && apiKey == "" {
 		return nil, errors.BadRequest("API key is required for embeddings")
 	}
 
+	var failedChunks []int
+	successCount := 0
+
 	for i := range chunks {
 		var embedding []float64
-		var err error
+		var lastErr error
 
-		switch s.cfg.Embeddings.Provider {
-		case "ollama":
-			embedding, err = s.generateOllamaEmbedding(chunks[i].Content)
-		case "openrouter":
-			embedding, err = s.generateOpenRouterEmbedding(chunks[i].Content, apiKey)
-		case "bedrock":
-			embedding, err = s.generateBedrockEmbedding(chunks[i].Content, apiKey)
-		default:
-			return nil, errors.BadRequest("unsupported embedding provider")
+		// Retry logic with exponential backoff
+		for attempt := 0; attempt < MaxRetries; attempt++ {
+			switch s.cfg.Embeddings.Provider {
+			case "ollama":
+				embedding, lastErr = s.generateOllamaEmbedding(chunks[i].Content)
+			case "openrouter":
+				embedding, lastErr = s.generateOpenRouterEmbedding(chunks[i].Content, apiKey)
+			case "bedrock":
+				embedding, lastErr = s.generateBedrockEmbedding(chunks[i].Content, apiKey)
+			default:
+				return nil, errors.BadRequest("unsupported embedding provider")
+			}
+
+			// Success - break retry loop
+			if lastErr == nil {
+				chunks[i].Embedding = embedding
+				successCount++
+				break
+			}
+
+			// Failed - wait before retry (except on last attempt)
+			if attempt < MaxRetries-1 {
+				backoff := InitialBackoff * time.Duration(1<<uint(attempt)) // Exponential: 1s, 2s, 4s
+				time.Sleep(backoff)
+			}
 		}
 
-		if err != nil {
-			return nil, errors.InternalWrap(err, fmt.Sprintf("failed to generate embedding for chunk %d", i))
+		// If all retries failed, record the chunk index
+		if lastErr != nil {
+			failedChunks = append(failedChunks, i)
 		}
-		chunks[i].Embedding = embedding
+	}
+
+	// If any chunks failed after all retries, return error with details
+	if len(failedChunks) > 0 {
+		return nil, errors.Internal(
+			fmt.Sprintf("failed to generate embeddings for %d/%d chunks (indices: %v) after %d retries",
+				len(failedChunks), len(chunks), failedChunks, MaxRetries),
+		)
 	}
 
 	return chunks, nil
